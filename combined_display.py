@@ -5,30 +5,71 @@ from io import BytesIO
 import time
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
 from threading import Lock
+import base64
 
-# Load configuration from file
+# Load configuration from files
 spotify_config_file_path = 'spotify_config.json'
 trakt_config_file_path = 'config.json'
 
-# Load Spotify configuration
-with open(spotify_config_file_path) as spotify_config_file:
-    spotify_config = json.load(spotify_config_file)
-spotify_access_token = spotify_config['access_token']
+# Load Spotify and Trakt configurations
+def load_config():
+    try:
+        with open(spotify_config_file_path) as spotify_config_file:
+            spotify_config = json.load(spotify_config_file)
+        
+        with open(trakt_config_file_path) as trakt_config_file:
+            trakt_config = json.load(trakt_config_file)
+        
+        return spotify_config, trakt_config
+    except FileNotFoundError as e:
+        print(f"Error loading configuration: {e}")
+        return None, None
+    except json.JSONDecodeError as e:
+        print(f"Error parsing configuration files: {e}")
+        return None, None
 
-# Load Trakt configuration
-with open(trakt_config_file_path) as trakt_config_file:
-    trakt_config = json.load(trakt_config_file)
-client_id = trakt_config['client_id']
-tmdb_api_key = trakt_config['tmdb_api_key']
-trakt_username = trakt_config['trakt_username']
+def refresh_spotify_token(config):
+    token_url = 'https://accounts.spotify.com/api/token'
+    
+    client_id = config.get('client_id')
+    client_secret = config.get('client_secret')
+    refresh_token = config.get('refresh_token')
+    
+    if not client_id or not client_secret or not refresh_token:
+        print("Error: Missing required configuration values.")
+        return None
+    
+    auth_str = f'{client_id}:{client_secret}'
+    auth_header = f'Basic {base64.b64encode(auth_str.encode()).decode()}'
+    
+    payload = {
+        'grant_type': 'refresh_token',
+        'refresh_token': refresh_token
+    }
+    headers = {
+        'Authorization': auth_header,
+        'Content-Type': 'application/x-www-form-urlencoded'
+    }
+    
+    try:
+        response = requests.post(token_url, data=payload, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        
+        if 'access_token' in data:
+            new_access_token = data['access_token']
+            print(f"New Access Token: {new_access_token}")
+            return new_access_token
+        else:
+            print("Error: No access token found in the response.")
+            return None
+    except requests.RequestException as e:
+        print(f"Spotify token refresh error: {e}")
+        return None
 
-# Trakt headers
-trakt_headers = {
-    'Content-Type': 'application/json',
-    'trakt-api-key': client_id,
-    'trakt-api-version': '2',
-}
-
+# Initialize global variables
+spotify_access_token = None
+trakt_headers = {}
 previous_poster_url = None
 previous_album_art_url = None
 previous_watching_state = None
@@ -57,11 +98,23 @@ def fetch_current_track(access_token):
     headers = {
         'Authorization': f'Bearer {access_token}'
     }
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 401:  # Unauthorized, possible token expiration
+            print("Spotify token expired. Refreshing...")
+            new_token = refresh_spotify_token(load_config()[0])
+            if new_token:
+                global spotify_access_token
+                spotify_access_token = new_token
+                with open(spotify_config_file_path, 'w') as f:
+                    json.dump({'access_token': new_token}, f, indent=4)
+                headers['Authorization'] = f'Bearer {new_token}'
+                response = requests.get(url, headers=headers)
+        
+        response.raise_for_status()
         return response.json()
-    else:
-        print(f"Spotify API Error: {response.status_code} {response.text}")
+    except requests.RequestException as e:
+        print(f"Spotify API Error: {e}")
         return None
 
 def fetch_album_artwork(image_url):
@@ -78,9 +131,7 @@ def fetch_currently_watching():
     try:
         response = requests.get(watching_url, headers=trakt_headers)
         response.raise_for_status()
-        data = response.json()
-        print(f"Current watching data: {data}")  # Debugging: Print the fetched data
-        return data
+        return response.json()
     except requests.RequestException as e:
         print(f"Error fetching currently watching data: {e}")
         return None
@@ -183,49 +234,65 @@ def display_album_art(album_art_url):
 
 def main():
     global previous_poster_url, previous_album_art_url, previous_watching_state
+    global spotify_access_token, trakt_headers, tmdb_api_key, trakt_username
 
     setup_matrix()
+    spotify_config, trakt_config = load_config()
 
-    while True:
-        # Fetch data from both sources
-        track_data = fetch_current_track(spotify_access_token)
-        watching_data = fetch_currently_watching()
+    if spotify_config and trakt_config:
+        spotify_access_token = spotify_config['access_token']
+        client_id = trakt_config['client_id']
+        tmdb_api_key = trakt_config['tmdb_api_key']
+        trakt_username = trakt_config['trakt_username']
 
-        # Determine if track data or watching data is available
-        track_is_playing = track_data and 'item' in track_data and track_data['is_playing']
-        watching_is_playing = watching_data and 'type' in watching_data
+        trakt_headers = {
+            'Content-Type': 'application/json',
+            'trakt-api-key': client_id,
+            'trakt-api-version': '2',
+        }
 
-        # Display album art if playing
-        if track_is_playing:
-            album_art_url = track_data['item']['album']['images'][0]['url']
-            print(f"Currently playing track: {track_data['item']['name']}")
-            display_album_art(album_art_url)
-        # Display movie poster if watching
-        elif watching_is_playing:
-            media_type = watching_data.get('type')
-            if media_type == 'movie':
-                movie_id = watching_data.get('movie', {}).get('ids', {}).get('tmdb')
-                if movie_id:
-                    poster_url = fetch_poster_from_tmdb(movie_id, is_movie=True)
-                    print(f"Currently watching movie: {watching_data.get('movie', {}).get('title')}")
-                    display_poster(poster_url)
-            elif media_type == 'episode':
-                episode = watching_data.get('episode')
-                show_id = watching_data.get('show', {}).get('ids', {}).get('tmdb')
-                if episode and show_id:
-                    season_number = episode.get('season')
-                    if season_number:
-                        poster_url = fetch_poster_from_tmdb(show_id, is_movie=False, season_number=season_number)
-                        print(f"Currently watching episode: S{season_number}E{episode.get('number')}")
+        while True:
+            # Fetch data from both sources
+            track_data = fetch_current_track(spotify_access_token)
+            watching_data = fetch_currently_watching()
+
+            # Determine if track data or watching data is available
+            track_is_playing = track_data and 'item' in track_data and track_data['is_playing']
+            watching_is_playing = watching_data and 'type' in watching_data
+
+            # Display album art if playing
+            if track_is_playing:
+                album_art_url = track_data['item']['album']['images'][0]['url']
+                print(f"Currently playing track: {track_data['item']['name']}")
+                display_album_art(album_art_url)
+            # Display movie poster if watching
+            elif watching_is_playing:
+                media_type = watching_data.get('type')
+                if media_type == 'movie':
+                    movie_id = watching_data.get('movie', {}).get('ids', {}).get('tmdb')
+                    if movie_id:
+                        poster_url = fetch_poster_from_tmdb(movie_id, is_movie=True)
+                        print(f"Currently watching movie: {watching_data.get('movie', {}).get('title')}")
                         display_poster(poster_url)
-        else:
-            print("Display cleared")
-            with matrix_lock:
-                matrix.Clear()
-            previous_watching_state = None  # Reset watching state when nothing is playing
+                elif media_type == 'episode':
+                    episode = watching_data.get('episode')
+                    show_id = watching_data.get('show', {}).get('ids', {}).get('tmdb')
+                    if episode and show_id:
+                        season_number = episode.get('season')
+                        if season_number:
+                            poster_url = fetch_poster_from_tmdb(show_id, is_movie=False, season_number=season_number)
+                            print(f"Currently watching episode: S{season_number}E{episode.get('number')}")
+                            display_poster(poster_url)
+            else:
+                print("Display cleared")
+                with matrix_lock:
+                    matrix.Clear()
+                previous_watching_state = None  # Reset watching state when nothing is playing
 
-        # Sleep before the next check
-        time.sleep(10)
+            # Sleep before the next check
+            time.sleep(10)
+    else:
+        print("Error loading configuration. Exiting.")
 
 if __name__ == '__main__':
     main()
