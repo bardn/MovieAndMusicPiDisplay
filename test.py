@@ -98,6 +98,7 @@ def fetch_currently_watching():
         print(f"Error fetching currently watching data: {e}")
         return None
 
+
 def fetch_poster_from_tmdb(tmdb_id, is_movie=True, season_number=None):
     base_url = 'https://api.themoviedb.org/3'
     endpoint = f"/{'movie' if is_movie else 'tv'}/{tmdb_id}"
@@ -257,3 +258,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
