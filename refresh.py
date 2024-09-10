@@ -49,7 +49,7 @@ def setup_matrix():
     options.chain_length = 1
     options.parallel = 1
     options.hardware_mapping = 'adafruit-hat'
-    options.brightness = 80
+    options.brightness = 60
     options.gpio_slowdown = 4
     matrix = RGBMatrix(options=options)
 
