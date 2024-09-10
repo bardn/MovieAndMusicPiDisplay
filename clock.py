@@ -1,4 +1,5 @@
 import requests
+import subprocess
 import json
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
@@ -59,20 +60,30 @@ def fetch_current_track(access_token):
         'Authorization': f'Bearer {access_token}'
     }
     response = requests.get(url, headers=headers)
+    
     if response.status_code == 204:
         return None  # No content playing
     elif response.status_code == 200:
         return response.json()
     elif response.status_code == 401:
-        # Refresh token if unauthorized
-        new_token = refresh_spotify_token(spotify_config)
-        if new_token:
-            spotify_config['access_token'] = new_token
-            save_config(spotify_config)
-            headers['Authorization'] = f'Bearer {new_token}'
-            response = requests.get(url, headers=headers)
-            if response.status_code == 200:
-                return response.json()
+        # Run the refresh token script
+        try:
+            result = subprocess.run(['python3', 'refresh_spotify_token.py'], capture_output=True, text=True)
+            if result.returncode == 0:
+                print("Spotify access token refreshed successfully.")
+                # Reload the updated token from the configuration file
+                with open(spotify_config_file_path) as spotify_config_file:
+                    spotify_config = json.load(spotify_config_file)
+                    new_token = spotify_config['access_token']
+                    headers['Authorization'] = f'Bearer {new_token}'
+                    response = requests.get(url, headers=headers)
+                    if response.status_code == 200:
+                        return response.json()
+            else:
+                print(f"Error refreshing token: {result.stderr}")
+        except Exception as e:
+            print(f"Error running token refresh script: {e}")
+
     print(f"Spotify API Error: {response.status_code} {response.text}")
     return None
 
