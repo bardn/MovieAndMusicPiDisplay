@@ -1,10 +1,11 @@
 import requests
 import json
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 import time
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
 from threading import Lock
+from datetime import datetime
 
 # Load configuration from file
 spotify_config_file_path = 'spotify_config.json'
@@ -97,6 +98,7 @@ def fetch_currently_watching():
     except requests.RequestException as e:
         print(f"Error fetching currently watching data: {e}")
         return None
+
 
 def fetch_poster_from_tmdb(tmdb_id, is_movie=True, season_number=None):
     base_url = 'https://api.themoviedb.org/3'
@@ -193,23 +195,31 @@ def display_album_art(album_art_url):
         except Exception as e:
             print(f"Error fetching or displaying album art: {e}")
 
-def create_clock_image():
-    # Create a blank image with a white background
+def display_clock_on_matrix():
+    """Displays the current time (hours and minutes) on the LED matrix."""
+    global matrix
+
+    # Create a blank image
     clock_image = Image.new('RGB', (matrix.width, matrix.height), (0, 0, 0))
     draw = ImageDraw.Draw(clock_image)
-    font = ImageFont.load_default()  # Use a default font; you can replace this with your preferred font
 
     # Get the current time
-    now = datetime.now()
-    time_str = now.strftime("%H:%M")
-    
+    current_time = datetime.now().strftime('%H:%M')
+
+    # Choose a font and size (make sure the font path is correct)
+    font = ImageFont.load_default()  # or use ImageFont.truetype('/path/to/font.ttf', size)
+
     # Calculate text size and position
-    text_width, text_height = draw.textsize(time_str, font=font)
-    position = ((matrix.width - text_width) / 2, (matrix.height - text_height) / 2)
-    
-    # Draw the time string on the image
-    draw.text(position, time_str, fill=(255, 255, 255), font=font)
-    return clock_image
+    text_width, text_height = draw.textsize(current_time, font=font)
+    position = ((matrix.width - text_width) // 2, (matrix.height - text_height) // 2)
+
+    # Draw the clock text on the image
+    draw.text(position, current_time, font=font, fill=(255, 255, 255))
+
+    # Display the clock image on the matrix
+    with matrix_lock:
+        matrix.SetImage(clock_image.convert('RGB'))
+        print("Clock displayed")
 
 def main():
     global previous_poster_url, previous_album_art_url, previous_watching_state
@@ -221,57 +231,45 @@ def main():
         track_data = fetch_current_track(spotify_access_token)
         watching_data = fetch_currently_watching()
 
-        # Check for Spotify API response 204
-        if track_data is None:
-            print("No music playing")
-            album_art_url = None
-        else:
-            track_is_playing = 'item' in track_data and track_data.get('is_playing', False)
-            if track_is_playing:
-                album_art_url = track_data['item']['album']['images'][0]['url']
-                print(f"Currently playing track: {track_data['item']['name']}")
-                display_album_art(album_art_url)
-            else:
-                album_art_url = None
-                print("No music playing")
+        # Determine if anything is playing
+        track_is_playing = track_data and 'item' in track_data and track_data.get('is_playing', False)
+        watching_is_playing = watching_data and 'type' in watching_data
 
-        # Check for Trakt API response 204
-        if watching_data is None:
-            print("No movie or show currently playing")
+        if track_is_playing:
+            album_art_url = track_data['item']['album']['images'][0]['url']
+            print(f"Currently playing track: {track_data['item']['name']}")
+            display_album_art(album_art_url)
             poster_url = None
         else:
-            watching_is_playing = 'type' in watching_data
-            if watching_is_playing:
-                media_type = watching_data.get('type')
-                if media_type == 'movie':
-                    movie_id = watching_data.get('movie', {}).get('ids', {}).get('tmdb')
-                    if movie_id:
-                        poster_url = fetch_poster_from_tmdb(movie_id, is_movie=True)
-                        print(f"Currently watching movie: {watching_data.get('movie', {}).get('title')}")
-                        display_poster(poster_url)
-                elif media_type == 'episode':
-                    episode = watching_data.get('episode')
-                    show_id = watching_data.get('show', {}).get('ids', {}).get('tmdb')
-                    if episode and show_id:
-                        season_number = episode.get('season')
-                        if season_number:
-                            poster_url = fetch_poster_from_tmdb(show_id, is_movie=False, season_number=season_number)
-                            print(f"Currently watching episode: S{season_number}E{episode.get('number')}")
-                            display_poster(poster_url)
-            else:
-                poster_url = None
-                print("No movie or show currently playing")
+            album_art_url = None
 
-        # Clear display if nothing is playing
+        if watching_is_playing:
+            media_type = watching_data.get('type')
+            if media_type == 'movie':
+                movie_id = watching_data.get('movie', {}).get('ids', {}).get('tmdb')
+                if movie_id:
+                    poster_url = fetch_poster_from_tmdb(movie_id, is_movie=True)
+                    print(f"Currently watching movie: {watching_data.get('movie', {}).get('title')}")
+                    display_poster(poster_url)
+            elif media_type == 'episode':
+                episode = watching_data.get('episode')
+                show_id = watching_data.get('show', {}).get('ids', {}).get('tmdb')
+                if episode and show_id:
+                    season_number = episode.get('season')
+                    if season_number:
+                        poster_url = fetch_poster_from_tmdb(show_id, is_movie=False, season_number=season_number)
+                        print(f"Currently watching episode: S{season_number}E{episode.get('number')}")
+                        display_poster(poster_url)
+        else:
+            poster_url = None
+
+        # Display clock if nothing is playing
         if album_art_url is None and poster_url is None:
-            if previous_watching_state is not None:
-                print("Display cleared")
-                with matrix_lock:
-                    matrix.Clear()
-                    # Display clock
-                    clock_image = create_clock_image()
-                    matrix.SetImage(clock_image)
-                previous_watching_state = None  # Reset watching state when nothing is playing
+            if previous_watching_state != 'clock':
+                display_clock_on_matrix()  # Display the clock
+                previous_watching_state = 'clock'
+        else:
+            previous_watching_state = 'content'  # Update watching state if content is playing
 
         # Sleep before the next check
         time.sleep(10)
