@@ -303,7 +303,7 @@ def main():
         # Display clock if nothing is playing
         if album_art_url is None and poster_url is None:
             if previous_watching_state != 'clock':
-                display_clock_on_matrix(font-size=20)  # Display the clock
+                display_clock_on_matrix(font_size=20)  # Display the clock
                 previous_watching_state = 'clock'
         else:
             previous_watching_state = 'content'  # Update watching state if content is playing
