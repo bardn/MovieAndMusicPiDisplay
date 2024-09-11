@@ -218,8 +218,8 @@ def display_album_art(album_art_url):
         except Exception as e:
             print(f"Error fetching or displaying album art: {e}")
 
-def display_clock_on_matrix():
-    """Displays the current time (hours and minutes) on the LED matrix."""
+def display_clock_on_matrix(font_size=20, font_path="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"):
+    """Displays the current time (hours and minutes) on the LED matrix with adjustable font size."""
     global matrix
 
     # Create a blank image
@@ -229,8 +229,13 @@ def display_clock_on_matrix():
     # Get the current time
     current_time = datetime.now().strftime('%H:%M')
 
-    # Choose a font and size
-    font = ImageFont.load_default()  # or use ImageFont.truetype('/path/to/font.ttf', size)
+    # Load the font with the specified size
+    try:
+        # Load a TrueType font from the specified path with the given size
+        font = ImageFont.truetype(font_path, font_size)
+    except IOError:
+        print(f"Error loading font '{font_path}'. Falling back to default font.")
+        font = ImageFont.load_default()  # Fallback to default font if TrueType font is not found
 
     # Calculate text size and position
     text_width, text_height = draw.textsize(current_time, font=font)
@@ -243,6 +248,10 @@ def display_clock_on_matrix():
     with matrix_lock:
         matrix.SetImage(clock_image.convert('RGB'))
         print("Clock displayed")
+
+# Example usage:
+display_clock_on_matrix(font_size=20)  # Uses DejaVuSans-Bold with size 20
+
 
 def main():
     global previous_poster_url, previous_album_art_url, previous_watching_state
@@ -296,7 +305,7 @@ def main():
         # Display clock if nothing is playing
         if album_art_url is None and poster_url is None:
             if previous_watching_state != 'clock':
-                display_clock_on_matrix()  # Display the clock
+                display_clock_on_matrix(font-size=20)  # Display the clock
                 previous_watching_state = 'clock'
         else:
             previous_watching_state = 'content'  # Update watching state if content is playing
