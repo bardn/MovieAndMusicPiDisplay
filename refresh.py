@@ -263,19 +263,18 @@ def main():
         'client_secret': "2bb55f0d1dbf4b23b465e0ea28c90f7e"
     })
 
+
     while True:
-        # Fetch data from both sources
         track_data = fetch_current_track()
         watching_data = fetch_currently_watching()
 
-        # Determine if anything is playing
         track_is_playing = track_data and 'item' in track_data and track_data.get('is_playing', False)
         watching_is_playing = watching_data and 'type' in watching_data
 
         if track_is_playing:
             album_art_url = track_data['item']['album']['images'][0]['url']
-            print(f"Currently playing track: {track_data['item']['name']}")
-            display_album_art(album_art_url)
+            if album_art_url != previous_album_art_url:
+                display_album_art(album_art_url)
             poster_url = None
         else:
             album_art_url = None
@@ -286,8 +285,8 @@ def main():
                 movie_id = watching_data.get('movie', {}).get('ids', {}).get('tmdb')
                 if movie_id:
                     poster_url = fetch_poster_from_tmdb(movie_id, is_movie=True)
-                    print(f"Currently watching movie: {watching_data.get('movie', {}).get('title')}")
-                    display_poster(poster_url)
+                    if poster_url != previous_poster_url:
+                        display_poster(poster_url)
             elif media_type == 'episode':
                 episode = watching_data.get('episode')
                 show_id = watching_data.get('show', {}).get('ids', {}).get('tmdb')
@@ -295,20 +294,18 @@ def main():
                     season_number = episode.get('season')
                     if season_number:
                         poster_url = fetch_poster_from_tmdb(show_id, is_movie=False, season_number=season_number)
-                        print(f"Currently watching episode: S{season_number}E{episode.get('number')}")
-                        display_poster(poster_url)
+                        if poster_url != previous_poster_url:
+                            display_poster(poster_url)
         else:
             poster_url = None
 
-        # Display clock if nothing is playing
         if album_art_url is None and poster_url is None:
             if previous_watching_state != 'clock':
-                display_clock_on_matrix(font_size=20)  # Display the clock
+                display_clock_on_matrix(font_size=20)
                 previous_watching_state = 'clock'
         else:
-            previous_watching_state = 'content'  # Update watching state if content is playing
+            previous_watching_state = 'content'
 
-        # Sleep before the next check
         time.sleep(10)
 
 if __name__ == '__main__':
