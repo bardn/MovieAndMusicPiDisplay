@@ -218,7 +218,7 @@ def display_album_art(album_art_url):
         except Exception as e:
             print(f"Error fetching or displaying album art: {e}")
 
-def display_clock_on_matrix(font_size=20, font_path="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"):
+def display_clock_on_matrix(font_size=18, font_path="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"):
     """Displays the current time (hours and minutes) on the LED matrix with adjustable font size."""
     global matrix
 
@@ -264,6 +264,10 @@ def main():
     })
 
 
+    previous_watching_state = 'none'
+    previous_track_data = None
+    previous_watching_data = None
+
     while True:
         track_data = fetch_current_track()
         watching_data = fetch_currently_watching()
@@ -271,22 +275,29 @@ def main():
         track_is_playing = track_data and 'item' in track_data and track_data.get('is_playing', False)
         watching_is_playing = watching_data and 'type' in watching_data
 
+        # Handle track data
         if track_is_playing:
             album_art_url = track_data['item']['album']['images'][0]['url']
-            if album_art_url != previous_album_art_url:
+            if album_art_url != previous_album_art_url or previous_track_data != track_data:
                 display_album_art(album_art_url)
+            previous_album_art_url = album_art_url
+            previous_track_data = track_data
+            previous_watching_state = 'track'
             poster_url = None
         else:
             album_art_url = None
 
+        # Handle watching data
         if watching_is_playing:
             media_type = watching_data.get('type')
             if media_type == 'movie':
                 movie_id = watching_data.get('movie', {}).get('ids', {}).get('tmdb')
                 if movie_id:
                     poster_url = fetch_poster_from_tmdb(movie_id, is_movie=True)
-                    if poster_url != previous_poster_url:
+                    if poster_url != previous_poster_url or previous_watching_data != watching_data:
                         display_poster(poster_url)
+                    previous_poster_url = poster_url
+                previous_watching_state = 'movie'
             elif media_type == 'episode':
                 episode = watching_data.get('episode')
                 show_id = watching_data.get('show', {}).get('ids', {}).get('tmdb')
@@ -294,18 +305,27 @@ def main():
                     season_number = episode.get('season')
                     if season_number:
                         poster_url = fetch_poster_from_tmdb(show_id, is_movie=False, season_number=season_number)
-                        if poster_url != previous_poster_url:
+                        if poster_url != previous_poster_url or previous_watching_data != watching_data:
                             display_poster(poster_url)
+                        previous_poster_url = poster_url
+                previous_watching_state = 'episode'
         else:
             poster_url = None
 
-        if album_art_url is None and poster_url is None:
+        # Display clock if nothing is playing
+        if not (track_is_playing or watching_is_playing):
             if previous_watching_state != 'clock':
-                display_clock_on_matrix(font_size=20)
+                display_clock_on_matrix(font_size=18)
                 previous_watching_state = 'clock'
         else:
-            previous_watching_state = 'content'
+            if previous_watching_state == 'clock':
+                # Clear the display or show a default message if required
+                pass
 
+        # Update previous_watching_data
+        previous_watching_data = watching_data
+
+        # Sleep before the next check
         time.sleep(10)
 
 if __name__ == '__main__':
