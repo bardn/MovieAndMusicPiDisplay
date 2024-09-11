@@ -258,19 +258,25 @@ def main_loop():
     setup_matrix()
     
     while True:
-        # Fetch and display Spotify track info
         track_data = fetch_current_track()
-        if track_data:
-            album_art_url = track_data.get('item', {}).get('album', {}).get('images', [{}])[0].get('url')
-            if album_art_url:
-                image = fetch_album_artwork(album_art_url)
-                if image:
-                    display_image_on_matrix(image, draw_clock=clock_overlay)
-        
-        # Fetch and display Trakt watching info
         watching_data = fetch_currently_watching()
-        if watching_data:
-            display_watching_info(watching_data)
+
+        track_is_playing = track_data and 'item' in track_data and track_data.get('is_playing', False)
+        watching_is_playing = watching_data and 'type' in watching_data
+
+        is_playing_content = track_is_playing or watching_is_playing
+
+        if is_playing_content:
+            if track_is_playing:
+                # Handle Spotify track data
+                album_art_url = track_data.get('item', {}).get('album', {}).get('images', [{}])[0].get('url')
+                if album_art_url:
+                    image = fetch_album_artwork(album_art_url)
+                    if image:
+                        display_image_on_matrix(image, draw_clock=clock_overlay)
+            elif watching_is_playing:
+                # Handle Trakt watching data
+                display_watching_info(watching_data)
         else:
             # Display a default screen when no content is playing
             clock_image = Image.new('RGB', (matrix.width, matrix.height), (0, 0, 0))
