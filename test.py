@@ -1,4 +1,5 @@
 import requests
+import json
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 import time
@@ -6,7 +7,6 @@ from rgbmatrix import RGBMatrix, RGBMatrixOptions
 from threading import Lock
 from datetime import datetime
 import base64
-import json
 
 # In-memory token storage
 token_storage = {
@@ -16,14 +16,15 @@ token_storage = {
     'client_secret': ''
 }
 
-# Load Trakt configuration
-with open('config.json') as trakt_config_file:
-    trakt_config = json.load(trakt_config_file)
-client_id = trakt_config['client_id']
-tmdb_api_key = trakt_config['tmdb_api_key']
-trakt_username = trakt_config['trakt_username']
+# Load configuration
+with open('config.json') as config_file:
+    config = json.load(config_file)
 
-# Trakt headers
+client_id = config['client_id']
+tmdb_api_key = config['tmdb_api_key']
+trakt_username = config['trakt_username']
+
+# Headers for Trakt API
 trakt_headers = {
     'Content-Type': 'application/json',
     'trakt-api-key': client_id,
@@ -184,6 +185,36 @@ def resize_image(image, target_size, fill_matrix=True, zoom_percentage=0, offset
 
     return img
 
+def calculate_brightness(image):
+    """Calculate the average brightness of the image."""
+    grayscale_image = image.convert('L')
+    pixels = list(grayscale_image.getdata())
+    avg_brightness = sum(pixels) / len(pixels)
+    return avg_brightness
+
+def draw_clock_on_image(image):
+    """Draw the clock on the provided image."""
+    draw = ImageDraw.Draw(image)
+    font_size = 18
+    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    
+    current_time = time.strftime('%H:%M')
+    
+    try:
+        font = ImageFont.truetype(font_path, font_size)
+    except IOError:
+        print(f"Error loading font '{font_path}'. Falling back to default font.")
+        font = ImageFont.load_default()
+
+    text_width, text_height = draw.textsize(current_time, font=font)
+    position = ((image.width - text_width) // 2, (image.height - text_height) // 2)
+    
+    avg_brightness = calculate_brightness(image)
+    text_color = (0, 0, 0) if avg_brightness > 128 else (255, 255, 255)
+    draw.text(position, current_time, font=font, fill=text_color)
+    
+    return image
+
 def display_image_on_matrix(image, draw_clock=False):
     image = image.convert('RGB')
     image = resize_image(image, (matrix.width, matrix.height), fill_image, zoom_percentage, offset_pixels)
@@ -199,97 +230,64 @@ def display_image_on_matrix(image, draw_clock=False):
         clock_image = Image.new('RGB', (matrix.width, matrix.height), (0, 0, 0))
         clock_image.paste(image, (0, 0))  # Paste the original image
 
-        draw = ImageDraw.Draw(clock_image)
-
-        current_time = datetime.now().strftime('%H:%M')
-        font_size = 18
-        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        try:
-            font = ImageFont.truetype(font_path, font_size)
-        except IOError:
-            print(f"Error loading font '{font_path}'. Falling back to default font.")
-            font = ImageFont.load_default()
-        
-        text_width, text_height = draw.textsize(current_time, font=font)
-        position = ((matrix.width - text_width) // 2, (matrix.height - text_height) // 2)
-        draw.text(position, current_time, font=font, fill=(255, 255, 255))
+        clock_image = draw_clock_on_image(clock_image)
 
         with matrix_lock:
             matrix.SetImage(clock_image.convert('RGB'))
             print("Clock overlay displayed")
 
-def main():
-    global previous_watching_state, last_clock_update
-
-    setup_matrix()
-
-    # Initialize token storage with some default values or load from an initial source
-    update_token_storage({
-        'access_token': "BQCCCam7Pm4qeJYnAIuaDBZD86CaIzAADEDJ7GCEXJfCKzTk5wyxoOPYlN_HvFE0I54AdJNIl7m9S3oWXpMEQcL54LhLFVpkk6xBKKuxAn_e5b93GLojfLhPT8uRUMdmd5RryH-zgm8OKa6GgelDLdjznCWNp_mHzpBzOt1XYkT4iPA8UE4SiOGcFWM1SXyGPYVUz50M15SGEjxVVug",
-        'refresh_token': "AQAK9lLvojbE2p89VdwNu32mJA8voVCTMNy2bX24tw7txev4sE6C4tVARqBzBbqbKqp0mwRcAwCp6RfiMHW7sfRdd5Zl3R9iz96jHCGaVvnqtl3IHWtVRusq8WDAv7oe7W0",
-        'client_id': "95e5ef96fe61488bacb034177158dfab",
-        'client_secret': "2bb55f0d1dbf4b23b465e0ea28c90f7e"
-    })
-
-
-    previous_watching_state = 'clock'
-    last_clock_update = time.time()
-
-    while True:
-        try:
-            track_data = fetch_current_track()
-            watching_data = fetch_currently_watching()
-
-            track_is_playing = track_data and 'item' in track_data and track_data.get('is_playing', False)
-            watching_is_playing = watching_data and isinstance(watching_data, list) and len(watching_data) > 0
-
-            if track_is_playing:
-                album_art_url = track_data['item'].get('album', {}).get('images', [{}])[0].get('url')
-                if album_art_url:
-                    image = fetch_album_artwork(album_art_url)
-                    if image:
-                        display_image_on_matrix(image, draw_clock=True)
-                        previous_watching_state = 'spotify'
-            elif watching_is_playing:
-                content_type = watching_data[0].get('type', '')
-                if content_type == 'movie':
-                    poster_url = watching_data[0].get('movie', {}).get('images', {}).get('poster', '')
-                elif content_type == 'show':
-                    poster_url = watching_data[0].get('show', {}).get('images', {}).get('poster', '')
-                else:
-                    print(f"Unsupported content type: {content_type}")
-                    poster_url = None
-                
+def display_watching_info(watching_data):
+    if isinstance(watching_data, dict):
+        media_type = watching_data.get('type')
+        if media_type == 'movie':
+            movie_id = watching_data.get('movie', {}).get('ids', {}).get('tmdb')
+            if movie_id:
+                poster_url = fetch_poster_from_tmdb(movie_id, is_movie=True)
                 if poster_url:
                     image = fetch_album_artwork(poster_url)
                     if image:
-                        display_image_on_matrix(image, draw_clock=True)
-                        previous_watching_state = content_type
-            else:
-                current_time = datetime.now().strftime('%H:%M')
-                image = Image.new('RGB', (matrix.width, matrix.height), (0, 0, 0))
-                draw = ImageDraw.Draw(image)
-                font_size = 18
-                font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-                try:
-                    font = ImageFont.truetype(font_path, font_size)
-                except IOError:
-                    print(f"Error loading font '{font_path}'. Falling back to default font.")
-                    font = ImageFont.load_default()
+                        display_image_on_matrix(image, draw_clock=clock_overlay)
+        elif media_type == 'show':
+            show_id = watching_data.get('show', {}).get('ids', {}).get('tmdb')
+            season_number = watching_data.get('season')
+            if show_id:
+                poster_url = fetch_poster_from_tmdb(show_id, is_movie=False, season_number=season_number)
+                if poster_url:
+                    image = fetch_album_artwork(poster_url)
+                    if image:
+                        display_image_on_matrix(image, draw_clock=clock_overlay)
 
-                text_width, text_height = draw.textsize(current_time, font=font)
-                position = ((matrix.width - text_width) // 2, (matrix.height - text_height) // 2)
-                draw.text(position, current_time, font=font, fill=(255, 255, 255))
+def main_loop():
+    global previous_poster_url, previous_album_art_url, previous_watching_state, fill_image, zoom_percentage, offset_pixels, clock_overlay
+    
+    setup_matrix()
+    
+    while True:
+        # Fetch and display Spotify track info
+        track_data = fetch_current_track()
+        if track_data:
+            album_art_url = track_data.get('item', {}).get('album', {}).get('images', [{}])[0].get('url')
+            if album_art_url and album_art_url != previous_album_art_url:
+                previous_album_art_url = album_art_url
+                image = fetch_album_artwork(album_art_url)
+                if image:
+                    display_image_on_matrix(image, draw_clock=clock_overlay)
+        
+        # Fetch and display Trakt watching info
+        watching_data = fetch_currently_watching()
+        if watching_data:
+            if watching_data != previous_watching_state:
+                previous_watching_state = watching_data
+                display_watching_info(watching_data)
+        else:
+            # Display a default screen when no content is playing
+            clock_image = Image.new('RGB', (matrix.width, matrix.height), (0, 0, 0))
+            clock_image = draw_clock_on_image(clock_image)
+            with matrix_lock:
+                matrix.SetImage(clock_image.convert('RGB'))
+                print("Clock displayed")
 
-                with matrix_lock:
-                    matrix.SetImage(image)
-                    print("Clock displayed")
-
-            time.sleep(10)  # Adjust sleep duration as needed
-
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            time.sleep(10)  # Wait before retrying on error
+        time.sleep(10)  # Delay between updates
 
 if __name__ == "__main__":
-    main()
+    main_loop()
