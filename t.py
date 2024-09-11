@@ -140,45 +140,50 @@ def fetch_poster_from_tmdb(tmdb_id, is_movie=True, season_number=None):
         print(f"Error fetching poster: {e}")
         return None
 
-def resize_image(image, target_size, fill_matrix=True, zoom_percentage=0, offset_pixels=0):
+def resize_image(image, target_size, fill_matrix=True, zoom_percentage=0, offset_pixels=0, is_poster=False):
     img_width, img_height = image.size
     target_width, target_height = target_size
 
     img_aspect = img_width / img_height
     target_aspect = target_width / target_height
 
-    if fill_matrix:
-        if img_aspect < target_aspect:
-            new_width = target_width
-            new_height = int(new_width / img_aspect)
+    if is_poster:
+        if fill_matrix:
+            if img_aspect < target_aspect:
+                new_width = target_width
+                new_height = int(new_width / img_aspect)
+            else:
+                new_height = target_height
+                new_width = int(new_height * img_aspect)
+
+            if zoom_percentage > 0:
+                new_width = int(new_width * (1 + zoom_percentage / 100))
+                new_height = int(new_height * (1 + zoom_percentage / 100))
+
+            img = image.resize((new_width, new_height), Image.LANCZOS)
+            top = (new_height - target_height) // 2 + offset_pixels
+            top = max(top, 0)
+            img = img.crop((0, top, target_width, top + target_height))
         else:
-            new_height = target_height
-            new_width = int(new_height * img_aspect)
+            if img_aspect > target_aspect:
+                new_width = target_width
+                new_height = int(new_width / img_aspect)
+            else:
+                new_height = target_height
+                new_width = int(new_height * img_aspect)
 
-        if zoom_percentage > 0:
-            new_width = int(new_width * (1 + zoom_percentage / 100))
-            new_height = int(new_height * (1 + zoom_percentage / 100))
-
-        img = image.resize((new_width, new_height), Image.LANCZOS)
-        top = (new_height - target_height) // 2 + offset_pixels
-        top = max(top, 0)
-        img = img.crop((0, top, target_width, top + target_height))
+            img = image.resize((new_width, new_height), Image.LANCZOS)
+            background = Image.new('RGB', target_size, (0, 0, 0))
+            paste_x = (target_width - new_width) // 2
+            paste_y = (target_height - new_height) // 2
+            background.paste(img, (paste_x, paste_y))
+            img = background
     else:
-        if img_aspect > target_aspect:
-            new_width = target_width
-            new_height = int(new_width / img_aspect)
-        else:
-            new_height = target_height
-            new_width = int(new_height * img_aspect)
-
-        img = image.resize((new_width, new_height), Image.LANCZOS)
-        background = Image.new('RGB', target_size, (0, 0, 0))
-        paste_x = (target_width - new_width) // 2
-        paste_y = (target_height - new_height) // 2
-        background.paste(img, (paste_x, paste_y))
-        img = background
+        # Resize for non-poster images, if needed
+        img = image.resize((target_width, target_height), Image.LANCZOS)
 
     return img
+
 
 def calculate_brightness(image):
     """Calculate the average brightness of the image."""
@@ -241,6 +246,7 @@ def display_watching_info(watching_data):
                 if poster_url:
                     image = fetch_album_artwork(poster_url)
                     if image:
+                        image = resize_image(image, (matrix.width, matrix.height), is_poster=True)
                         display_image_on_matrix(image, draw_clock=clock_overlay)
         elif media_type == 'show':
             show_id = watching_data.get('show', {}).get('ids', {}).get('tmdb')
@@ -250,12 +256,14 @@ def display_watching_info(watching_data):
                 if poster_url:
                     image = fetch_album_artwork(poster_url)
                     if image:
+                        image = resize_image(image, (matrix.width, matrix.height), is_poster=True)
                         display_image_on_matrix(image, draw_clock=clock_overlay)
 
 def main_loop():
     global fill_image, zoom_percentage, offset_pixels, clock_overlay
     
     setup_matrix()
+    previous_watching_state = 'clock'
     
     while True:
         track_data = fetch_current_track()
@@ -267,6 +275,7 @@ def main_loop():
         is_playing_content = track_is_playing or watching_is_playing
 
         if is_playing_content:
+            previous_watching_state = 'content'
             if track_is_playing:
                 # Handle Spotify track data
                 album_art_url = track_data.get('item', {}).get('album', {}).get('images', [{}])[0].get('url')
@@ -284,6 +293,7 @@ def main_loop():
             with matrix_lock:
                 matrix.SetImage(clock_image.convert('RGB'))
                 print("Clock displayed")
+                previous_watching_state = 'clock'
 
         time.sleep(10)  # Delay between updates
 
