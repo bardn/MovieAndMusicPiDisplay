@@ -250,8 +250,6 @@ def display_clock_on_matrix(font_size=20, font_path="/usr/share/fonts/truetype/d
         print("Clock displayed")
 
 # Example usage:
-display_clock_on_matrix(font_size=20)  # Uses DejaVuSans-Bold with size 20
-
 
 def main():
     global previous_poster_url, previous_album_art_url, previous_watching_state
