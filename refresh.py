@@ -257,10 +257,10 @@ def main():
     setup_matrix()
     # Initialize token storage with some default values or load from an initial source
     update_token_storage({
-        'access_token': "BQCCCam7Pm4qeJYnAIuaDBZD86CaIzAADEDJ7GCEXJfCKzTk5wyxoOPYlN_HvFE0I54AdJNIl7m9S3oWXpMEQcL54LhLFVpkk6xBKKuxAn_e5b93GLojfLhPT8uRUMdmd5RryH-zgm8OKa6GgelDLdjznCWNp_mHzpBzOt1XYkT4iPA8UE4SiOGcFWM1SXyGPYVUz50M15SGEjxVVug",
-        'refresh_token': "AQAK9lLvojbE2p89VdwNu32mJA8voVCTMNy2bX24tw7txev4sE6C4tVARqBzBbqbKqp0mwRcAwCp6RfiMHW7sfRdd5Zl3R9iz96jHCGaVvnqtl3IHWtVRusq8WDAv7oe7W0",
-        'client_id': "95e5ef96fe61488bacb034177158dfab",
-        'client_secret': "2bb55f0d1dbf4b23b465e0ea28c90f7e"
+        'access_token': "",
+        'refresh_token': "",
+        'client_id': "",
+        'client_secret': ""
     })
 
     previous_poster_url = None
@@ -323,7 +323,7 @@ def main():
         else:
             # Display clock if nothing is playing
             current_time = time.time()
-            if current_time - last_clock_update >= 60:
+            if current_time - last_clock_update >= 10:
                 display_clock_on_matrix(font_size=20)
                 last_clock_update = current_time
             previous_watching_state = 'clock'
