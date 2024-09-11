@@ -5,15 +5,14 @@ from io import BytesIO
 import time
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
 from threading import Lock
-from datetime import datetime
 import base64
 
 # In-memory token storage
 token_storage = {
-    'access_token': '',
-    'refresh_token': '',
-    'client_id': '',
-    'client_secret': ''
+    'access_token': "BQCCCam7Pm4qeJYnAIuaDBZD86CaIzAADEDJ7GCEXJfCKzTk5wyxoOPYlN_HvFE0I54AdJNIl7m9S3oWXpMEQcL54LhLFVpkk6xBKKuxAn_e5b93GLojfLhPT8uRUMdmd5RryH-zgm8OKa6GgelDLdjznCWNp_mHzpBzOt1XYkT4iPA8UE4SiOGcFWM1SXyGPYVUz50M15SGEjxVVug",
+    'refresh_token': "AQAK9lLvojbE2p89VdwNu32mJA8voVCTMNy2bX24tw7txev4sE6C4tVARqBzBbqbKqp0mwRcAwCp6RfiMHW7sfRdd5Zl3R9iz96jHCGaVvnqtl3IHWtVRusq8WDAv7oe7W0",
+    'client_id': "95e5ef96fe61488bacb034177158dfab",
+    'client_secret': "2bb55f0d1dbf4b23b465e0ea28c90f7e"
 }
 
 # Load configuration
@@ -31,15 +30,11 @@ trakt_headers = {
     'trakt-api-version': '2',
 }
 
-previous_poster_url = None
-previous_album_art_url = None
-previous_watching_state = None
 matrix = None
 fill_image = True
 zoom_percentage = 0
 offset_pixels = 0
 clock_overlay = True
-last_clock_update = time.time()
 
 # Create a lock for the matrix
 matrix_lock = Lock()
@@ -258,7 +253,7 @@ def display_watching_info(watching_data):
                         display_image_on_matrix(image, draw_clock=clock_overlay)
 
 def main_loop():
-    global previous_poster_url, previous_album_art_url, previous_watching_state, fill_image, zoom_percentage, offset_pixels, clock_overlay
+    global fill_image, zoom_percentage, offset_pixels, clock_overlay
     
     setup_matrix()
     
@@ -267,8 +262,7 @@ def main_loop():
         track_data = fetch_current_track()
         if track_data:
             album_art_url = track_data.get('item', {}).get('album', {}).get('images', [{}])[0].get('url')
-            if album_art_url and album_art_url != previous_album_art_url:
-                previous_album_art_url = album_art_url
+            if album_art_url:
                 image = fetch_album_artwork(album_art_url)
                 if image:
                     display_image_on_matrix(image, draw_clock=clock_overlay)
@@ -276,9 +270,7 @@ def main_loop():
         # Fetch and display Trakt watching info
         watching_data = fetch_currently_watching()
         if watching_data:
-            if watching_data != previous_watching_state:
-                previous_watching_state = watching_data
-                display_watching_info(watching_data)
+            display_watching_info(watching_data)
         else:
             # Display a default screen when no content is playing
             clock_image = Image.new('RGB', (matrix.width, matrix.height), (0, 0, 0))
