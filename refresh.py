@@ -35,8 +35,8 @@ previous_album_art_url = None
 previous_watching_state = None
 matrix = None
 fill_image = True
-zoom_percentage = 8
-offset_pixels = -10
+zoom_percentage = 0
+offset_pixels = 0
 
 # Create a lock for the matrix
 matrix_lock = Lock()
@@ -257,20 +257,17 @@ def main():
     setup_matrix()
     # Initialize token storage with some default values or load from an initial source
     update_token_storage({
-        'access_token': "",
-        'refresh_token': "",
-        'client_id': "",
-        'client_secret': ""
+        'access_token': "BQCCCam7Pm4qeJYnAIuaDBZD86CaIzAADEDJ7GCEXJfCKzTk5wyxoOPYlN_HvFE0I54AdJNIl7m9S3oWXpMEQcL54LhLFVpkk6xBKKuxAn_e5b93GLojfLhPT8uRUMdmd5RryH-zgm8OKa6GgelDLdjznCWNp_mHzpBzOt1XYkT4iPA8UE4SiOGcFWM1SXyGPYVUz50M15SGEjxVVug",
+        'refresh_token': "AQAK9lLvojbE2p89VdwNu32mJA8voVCTMNy2bX24tw7txev4sE6C4tVARqBzBbqbKqp0mwRcAwCp6RfiMHW7sfRdd5Zl3R9iz96jHCGaVvnqtl3IHWtVRusq8WDAv7oe7W0",
+        'client_id': "95e5ef96fe61488bacb034177158dfab",
+        'client_secret': "2bb55f0d1dbf4b23b465e0ea28c90f7e"
     })
-
-    previous_poster_url = None
-    previous_album_art_url = None
-    previous_watching_state = 'none'
-    last_clock_update = time.time()  # Initialize the last clock update time
+    
+    previous_watching_state = 'clock'
+    last_clock_update = time.time()
 
     # Initial clock display
     display_clock_on_matrix(font_size=20)
-    last_clock_update = time.time()  # Reset clock update time after initial display
 
     while True:
         track_data = fetch_current_track()
@@ -282,54 +279,58 @@ def main():
         is_playing_content = track_is_playing or watching_is_playing
 
         if is_playing_content:
-            # Handle track data
             if track_is_playing:
                 album_art_url = track_data['item']['album']['images'][0]['url']
-                if album_art_url != previous_album_art_url:
+                # Only fetch and display the image when content is playing
+                if previous_watching_state != 'content':
                     image = fetch_album_artwork(album_art_url)
                     if image:
                         display_image_on_matrix(image)
-                        previous_album_art_url = album_art_url
+                        previous_watching_state = 'content'
 
-            # Handle watching data
-            if watching_is_playing:
+            elif watching_is_playing:
                 media_type = watching_data.get('type')
                 if media_type == 'movie':
                     movie_id = watching_data.get('movie', {}).get('ids', {}).get('tmdb')
-                    if movie_id:
+                    if movie_id and previous_watching_state != 'content':
                         poster_url = fetch_poster_from_tmdb(movie_id, is_movie=True)
-                        if poster_url != previous_poster_url:
+                        image_response = requests.get(poster_url)
+                        if image_response.status_code == 200:
+                            img = Image.open(BytesIO(image_response.content))
+                            display_image_on_matrix(img)
+                            previous_watching_state = 'content'
+
+                elif media_type == 'episode':
+                    episode = watching_data.get('episode')
+                    show_id = watching_data.get('show', {}).get('ids', {}).get('tmdb')
+                    if episode and show_id and previous_watching_state != 'content':
+                        season_number = episode.get('season')
+                        if season_number:
+                            poster_url = fetch_poster_from_tmdb(show_id, is_movie=False, season_number=season_number)
                             image_response = requests.get(poster_url)
                             if image_response.status_code == 200:
                                 img = Image.open(BytesIO(image_response.content))
                                 display_image_on_matrix(img)
-                                previous_poster_url = poster_url
-                elif media_type == 'episode':
-                    episode = watching_data.get('episode')
-                    show_id = watching_data.get('show', {}).get('ids', {}).get('tmdb')
-                    if episode and show_id:
-                        season_number = episode.get('season')
-                        if season_number:
-                            poster_url = fetch_poster_from_tmdb(show_id, is_movie=False, season_number=season_number)
-                            if poster_url != previous_poster_url:
-                                image_response = requests.get(poster_url)
-                                if image_response.status_code == 200:
-                                    img = Image.open(BytesIO(image_response.content))
-                                    display_image_on_matrix(img)
-                                    previous_poster_url = poster_url
-
-            previous_watching_state = media_type
+                                previous_watching_state = 'content'
 
         else:
-            # Display clock if nothing is playing
-            current_time = time.time()
-            if current_time - last_clock_update >= 10:
+            # If nothing is playing and the clock is not currently displayed, show the clock
+            if previous_watching_state != 'clock':
                 display_clock_on_matrix(font_size=20)
-                last_clock_update = current_time
-            previous_watching_state = 'clock'
+                last_clock_update = time.time()  # Reset the clock update time
+                previous_watching_state = 'clock'
+            else:
+                # Update the clock display every minute
+                current_time = time.time()
+                if current_time - last_clock_update >= 60:
+                    display_clock_on_matrix(font_size=20)
+                    last_clock_update = current_time
 
         # Sleep before the next check
         time.sleep(10)
+    
+
+
 
 if __name__ == '__main__':
     main()
