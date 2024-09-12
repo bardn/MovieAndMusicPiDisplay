@@ -192,7 +192,7 @@ def calculate_brightness(image):
     return avg_brightness
 
 def draw_clock_on_image(image):
-    """Draw the clock on the provided image."""
+    """Draw the clock on the provided image with an outline to ensure visibility."""
     draw = ImageDraw.Draw(image)
     font_size = 18
     font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -205,14 +205,30 @@ def draw_clock_on_image(image):
         print(f"Error loading font '{font_path}'. Falling back to default font.")
         font = ImageFont.load_default()
 
-    text_width, text_height = draw.textsize(current_time, font=font)
+    # Calculate text size using textbbox
+    text_bbox = draw.textbbox((0, 0), current_time, font=font)
+    text_width = text_bbox[2] - text_bbox[0]
+    text_height = text_bbox[3] - text_bbox[1]
+    
     position = ((image.width - text_width) // 2, (image.height - text_height) // 2)
     
+    # Determine text color and outline color based on average brightness
     avg_brightness = calculate_brightness(image)
-    text_color = (0, 0, 0) if avg_brightness > 128 else (255, 255, 255)
-    draw.text(position, current_time, font=font, fill=text_color)
+    text_color = (0, 0, 0) if avg_brightness > 255 else (255, 255, 255)
+    outline_color = (255, 255, 255) if text_color == (0, 0, 0) else (0, 0, 0)
+
+    # Draw the text with an outline
+    draw.text(
+        position,
+        current_time,
+        font=font,
+        fill=text_color,
+        stroke_width=2,        # Width of the outline
+        stroke_fill=outline_color # Color of the outline
+    )
     
     return image
+
 
 def display_image_on_matrix(image, draw_clock=False):
     image = image.convert('RGB')
