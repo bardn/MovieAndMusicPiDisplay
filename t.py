@@ -184,7 +184,6 @@ def resize_image(image, target_size, fill_matrix=True, zoom_percentage=0, offset
 
     return img
 
-
 def calculate_brightness(image):
     """Calculate the average brightness of the image."""
     grayscale_image = image.convert('L')
@@ -238,26 +237,18 @@ def display_image_on_matrix(image, draw_clock=False):
 
 def display_watching_info(watching_data):
     if isinstance(watching_data, dict):
-        media_type = watching_data.get('type')
-        if media_type == 'movie':
-            movie_id = watching_data.get('movie', {}).get('ids', {}).get('tmdb')
-            if movie_id:
-                poster_url = fetch_poster_from_tmdb(movie_id, is_movie=True)
-                if poster_url:
-                    image = fetch_album_artwork(poster_url)
-                    if image:
-                        image = resize_image(image, (matrix.width, matrix.height), is_poster=True)
-                        display_image_on_matrix(image, draw_clock=clock_overlay)
-        elif media_type == 'show':
-            show_id = watching_data.get('show', {}).get('ids', {}).get('tmdb')
-            season_number = watching_data.get('season')
-            if show_id:
-                poster_url = fetch_poster_from_tmdb(show_id, is_movie=False, season_number=season_number)
-                if poster_url:
-                    image = fetch_album_artwork(poster_url)
-                    if image:
-                        image = resize_image(image, (matrix.width, matrix.height), is_poster=True)
-                        display_image_on_matrix(image, draw_clock=clock_overlay)
+        tmdb_id = watching_data.get('show', {}).get('ids', {}).get('tmdb')
+        if tmdb_id:
+            poster_url = fetch_poster_from_tmdb(tmdb_id, is_movie=False)
+            if poster_url:
+                try:
+                    image_response = requests.get(poster_url)
+                    image_response.raise_for_status()
+                    img = Image.open(BytesIO(image_response.content))
+                    print(f"Displaying poster: {poster_url}")
+                    display_image_on_matrix(img, draw_clock=clock_overlay)
+                except requests.RequestException as e:
+                    print(f"Error fetching or displaying poster: {e}")
 
 def main_loop():
     global fill_image, zoom_percentage, offset_pixels, clock_overlay
