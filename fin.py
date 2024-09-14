@@ -192,7 +192,7 @@ def calculate_brightness(image):
     return avg_brightness
 
 def draw_clock_on_image(image):
-    """Draw the clock on the provided image with an outline to ensure visibility."""
+    """Draw the clock on the provided image, ensuring it is centered."""
     draw = ImageDraw.Draw(image)
     font_size = 18
     font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -210,8 +210,10 @@ def draw_clock_on_image(image):
     text_width = text_bbox[2] - text_bbox[0]
     text_height = text_bbox[3] - text_bbox[1]
     
-    position = ((image.width - text_width) // 2, (image.height - text_height) // 2)
-    
+    # Center the text horizontally and vertically, with a manual vertical adjustment
+    position_x = (image.width - text_width) // 2
+    position_y = (image.height - text_height) // 2 - 4  # Adjust this offset to fine-tune vertical centering
+
     # Determine text color and outline color based on average brightness
     avg_brightness = calculate_brightness(image)
     text_color = (0, 0, 0) if avg_brightness > 255 else (255, 255, 255)
@@ -219,7 +221,7 @@ def draw_clock_on_image(image):
 
     # Draw the text with an outline
     draw.text(
-        position,
+        (position_x, position_y),
         current_time,
         font=font,
         fill=text_color,
